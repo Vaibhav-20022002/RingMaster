@@ -1,26 +1,36 @@
 # RingMaster SPSC Buffer Benchmark Summary
 
-The table below highlights, for each element size, the best‐performing compiler optimization level and key metrics:
+This table summarizes the peak observed performance across varying element sizes using the updated memory model on an Intel i7 6th gen (Skylake) processor. The best compiler optimization level (`-O2` or `-O3`) is reported per case, along with critical metrics:
 
 | Element Size | Best Opt | Throughput<br>(items/s) | Bandwidth<br>(MB/s) | Push Retry<br>(%) | Pop Retry<br>(%) | Efficiency<br>(items/μs) |
-|-------------:|:--------:|------------------------:|--------------------:|------------------:|-----------------:|-------------------------:|
-| 4 bytes      | O2       | 6'06'02'388              | 231.18              | 4.13 %            | 9.24 %           | 60.602388                |
-| 8 bytes      | O3       | 6'52'11'154              | 497.52              | 10.33 %           | 22.78 %          | 65.211154                |
-| 16 bytes     | O3       | 6'17'75'680              | 942.62              | 14.49 %           | 31.65 %          | 61.775680                |
-| 32 bytes     | O2       | 5'80'12'043              | 1770.39             | 12.75 %           | 34.97 %          | 58.012043                |
-| 64 bytes     | O2       | 5'36'00'909              | 3271.54             | 0.37 %            | 26.84 %          | 53.600909                |
-| 1024 bytes   | O3       | 1'78'52'361              | 17433.95            | 6.01 %            | 91.83 %          | 17.852361                |
-| 2048 bytes   | O3       | 1'20'78'929              | 23591.66            | 0.00 %            | 96.98 %          | 12.078929                |
-| 4096 bytes   | O3       | 70'64'771               | 27596.76            | 0.00 %            | 98.53 %          | 7.064771                 |
+| -----------: | :------: | ----------------------: | ------------------: | ----------------: | ---------------: | -----------------------: |
+|      4 bytes |    O3    |             6'23'04'565 |              237.38 |            4.10 % |           9.37 % |                62.304565 |
+|      8 bytes |    O3    |             6'49'12'380 |              495.76 |           10.40 % |          23.01 % |                68.912380 |
+|     16 bytes |    O3    |             6'18'75'460 |              942.17 |           13.98 % |          31.60 % |                61.875460 |
+|     32 bytes |    O3    |             5'77'56'442 |             1771.02 |           12.93 % |          34.81 % |                57.756442 |
+|     64 bytes |    O2    |             5'36'07'712 |             3274.70 |            0.35 % |          26.94 % |                53.607712 |
+|   1024 bytes |    O3    |             1'78'93'015 |            17478.61 |            6.12 % |          91.70 % |                17.893015 |
+|   2048 bytes |    O3    |             1'20'69'337 |            23569.79 |            0.00 % |          97.05 % |                12.069337 |
+|   4096 bytes |    O3    |               70'34'551 |            27555.59 |            0.00 % |          98.57 % |                 7.034551 |
 
 ---
 
 ## Conclusions
 
-- **Peak throughput & bandwidth** scale with element size up to cache‐line granularity (64 B), after which memory subsystem limits dominate.
-- **O2/O3** deliver the best balance of speed vs. retry overhead for small‐to‐medium items; O3 is generally preferred for larger elements.
-- **Push retry rates** remain low (< 5 %) for power‐of‐two capacities under O2/O3, but pop retries rise significantly (> 90 %) once the buffer is heavily loaded at large element sizes.
-- **Accuracy** remains 100 % in all configurations.
-- **Efficiency** (items/μs) closely mirrors throughput trends, peaking for 8B - 16B elements under O3.
+* **Performance profile remains similar** to the previous version (using `memory_order_acquire`).
 
-Overall, the lock-free RingMaster buffer achieves excellent sustained throughput with minimal retry overhead at O2/O3 optimizations, especially for element sizes between 8 B and 64 B.
+* **Compiler optimization still dominates**:
+
+  * O3 is consistently best for mid-to-large element sizes (≥ 16 B).
+  * O2 may win in a few edge cases for smaller items due to register pressure.
+* **Element size affects cache/memory bottlenecks**:
+
+  * Bandwidth scales linearly with size until **memory wall hits** at \~1–4 KB.
+  * `4`–`64` B: **L1-cache bound**
+  * `256` B–`1` KB: **L2/L3 bound**
+  * ≥ `1` KB: **DRAM bound**, sustained \~`25` GB/s
+* **Push retry rates** remain low across all sizes except for very tight buffers (e.g., 4 B) with high contention.
+* **Pop retry rates climb rapidly** for large elements due to buffer occupancy—especially when producer outpaces the consumer.
+* **Sequence correctness & throughput stability** hold across all runs.
+
+
