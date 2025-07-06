@@ -15,9 +15,11 @@
  * guarantee thread safety.
  *
  * @section Assumptions
- * - Capacity is compile-time constant and a power of two for efficient indexing.
+ * - Capacity is compile-time constant and a power of two for efficient
+ * indexing.
  * - Only one thread calls push(), and only one thread calls pop().
- * - Type Q_TYPE supports nothrow move construction and assignment; copying is avoided.
+ * - Type Q_TYPE supports nothrow move construction and assignment; copying is
+ * avoided.
  *
  * @section Usage
  * @code
@@ -32,15 +34,16 @@
  * }
  * @endcode
  *
- * @tparam Q_TYPE Element type stored in the ring; must be movable without throwing.
+ * @tparam Q_TYPE Element type stored in the ring; must be movable without
+ * throwing.
  */
 
 /**
  * @class RingMaster
  * @brief Lock-free circular buffer for single-producer/single-consumer patterns
  *
- * RingMaster provides constant-time push and pop operations with minimal latency.
- * Internally, it uses two atomic counters (head_ and tail_) padded to
+ * RingMaster provides constant-time push and pop operations with minimal
+ * latency. Internally, it uses two atomic counters (head_ and tail_) padded to
  * cache lines to prevent false sharing. The buffer array is also aligned
  * to 64-byte boundaries.
  *
@@ -62,8 +65,9 @@ private:
    * preventing contention between threads operating on head_ and tail_.
    */
   struct alignas(64) PaddedAtomic {
-    std::atomic<size_t> var;                    /**< Atomic index counter (head or tail) */
-    char pad[64 - sizeof(std::atomic<size_t>)]; /**< Padding to complete cache line size */
+    std::atomic<size_t> var; /**< Atomic index counter (head or tail) */
+    char                pad[64 - sizeof(std::atomic<size_t>)]; /**< Padding to complete cache
+                                                                  line size */
   };
 
   PaddedAtomic head_{0};                /**< Producer index (next write position) */
@@ -95,13 +99,14 @@ public:
    * Uses atomic operations to update head position after storing the value.
    * Employs perfect forwarding to accept lvalues or rvalues efficiently.
    *
-   * @tparam ENQ_TYPE Type deduced for insertion (should match Q_TYPE or convertible)
+   * @tparam ENQ_TYPE Type deduced for insertion (should match Q_TYPE or
+   * convertible)
    * @param value Element to insert (forwarded)
    * @return true if insertion succeeded, false if buffer was full
    */
   template<typename ENQ_TYPE> bool push(ENQ_TYPE &&value) noexcept {
     const size_t head = head_.var.load(std::memory_order_relaxed);
-    const size_t tail = tail_.var.load(std::memory_order_relaxed);
+    const size_t tail = tail_.var.load(std::memory_order_acquire);
 
     if (head - tail >= Capacity) { // buffer full
       return false;
@@ -168,7 +173,8 @@ public:
   /**
    * @brief Check if buffer is empty
    *
-   * Compares head_ and tail_ atomically; may be slightly stale under concurrency.
+   * Compares head_ and tail_ atomically; may be slightly stale under
+   * concurrency.
    *
    * @return true if no elements are in the buffer, false otherwise.
    */
@@ -191,7 +197,8 @@ public:
   /**
    * @brief Get approximate count of elements in buffer
    *
-   * Computes difference between head_ and tail_; may be stale under heavy concurrency.
+   * Computes difference between head_ and tail_; may be stale under heavy
+   * concurrency.
    *
    * @return Number of elements currently held in buffer
    */
