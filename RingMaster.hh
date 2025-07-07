@@ -113,6 +113,8 @@ public:
     }
 
     buffer_[head & Mask] = std::forward<ENQ_TYPE>(value);
+
+    // Use release ordering to ensure the data write is visible before the head update
     head_.var.store(head + 1, std::memory_order_release);
     return true;
   }
@@ -134,6 +136,8 @@ public:
     }
 
     out = std::move(buffer_[tail & Mask]);
+
+    // Use release ordering to ensure data read completes before tail update
     tail_.var.store(tail + 1, std::memory_order_release);
     return true;
   }
@@ -179,7 +183,9 @@ public:
    * @return true if no elements are in the buffer, false otherwise.
    */
   bool isEmpty() const noexcept {
-    return head_.var.load(std::memory_order_acquire) == tail_.var.load(std::memory_order_acquire);
+    const size_t head = head_.var.load(std::memory_order_acquire);
+    const size_t tail = tail_.var.load(std::memory_order_acquire);
+    return head == tail;
   }
 
   /**
@@ -190,8 +196,9 @@ public:
    * @return true if no additional elements can be pushed, false otherwise.
    */
   bool isFull() const noexcept {
-    return Capacity <=
-        head_.var.load(std::memory_order_acquire) - tail_.var.load(std::memory_order_acquire);
+    const size_t head = head_.var.load(std::memory_order_acquire);
+    const size_t tail = tail_.var.load(std::memory_order_acquire);
+    return head - tail >= Capacity;
   }
 
   /**
@@ -203,6 +210,8 @@ public:
    * @return Number of elements currently held in buffer
    */
   size_t size() const noexcept {
-    return head_.var.load(std::memory_order_acquire) - tail_.var.load(std::memory_order_acquire);
+    const size_t head = head_.var.load(std::memory_order_acquire);
+    const size_t tail = tail_.var.load(std::memory_order_acquire);
+    return head - tail;
   }
 };
