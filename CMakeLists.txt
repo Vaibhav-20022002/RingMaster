@@ -55,3 +55,9 @@ target_include_directories(exe PRIVATE ${CMAKE_SOURCE_DIR})
 target_compile_definitions(exe PRIVATE
   CACHE_LINE_SIZE=${DETECTED_CACHE_LINE_SIZE}
 )
+
+# * Step:6 - Add compiler options
+target_compile_options(exe PRIVATE
+  -O2
+  -march=native
+)
