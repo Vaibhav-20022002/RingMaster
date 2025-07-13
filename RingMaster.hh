@@ -38,6 +38,10 @@
  * throwing.
  */
 
+#ifndef CACHE_LINE_SIZE
+#define CACHE_LINE_SIZE 64 // Default cache line size in bytes
+#endif
+
 /**
  * @class RingMaster
  * @brief Lock-free circular buffer for single-producer/single-consumer patterns
@@ -64,15 +68,16 @@ private:
    * Each atomic variable is padded to occupy its own cache line,
    * preventing contention between threads operating on head_ and tail_.
    */
-  struct alignas(64) PaddedAtomic {
+  struct alignas(CACHE_LINE_SIZE) PaddedAtomic {
     std::atomic<size_t> var; /**< Atomic index counter (head or tail) */
-    char                pad[64 - sizeof(std::atomic<size_t>)]; /**< Padding to complete cache
-                                                                  line size */
+    char pad[CACHE_LINE_SIZE - sizeof(std::atomic<size_t>)]; /**< Padding to complete cache
+                                                   line size */
   };
 
-  PaddedAtomic head_{0};                /**< Producer index (next write position) */
-  PaddedAtomic tail_{0};                /**< Consumer index (next read position) */
-  alignas(64) Q_TYPE buffer_[Capacity]; /**< Storage for elements, cache-line aligned */
+  PaddedAtomic head_{0}; /**< Producer index (next write position) */
+  PaddedAtomic tail_{0}; /**< Consumer index (next read position) */
+  alignas(
+      CACHE_LINE_SIZE) Q_TYPE buffer_[Capacity]; /**< Storage for elements, cache-line aligned */
 
 public:
   /**
