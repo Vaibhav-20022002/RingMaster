@@ -46,7 +46,7 @@ else()
 endif()
 
 # * Step:3 - Build the main application :
-add_executable(exe test.cpp)
+add_executable(exe main.cc)
 
 # * Step:4 - Link RingMaster.hh for the buffer integration :
 target_include_directories(exe PRIVATE ${CMAKE_SOURCE_DIR})
