@@ -60,4 +60,5 @@ target_compile_definitions(exe PRIVATE
 target_compile_options(exe PRIVATE
   -O2
   -march=native
+  -pthread
 )
