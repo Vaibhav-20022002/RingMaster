@@ -51,7 +51,7 @@
 
 > **Observation**: Peak efficiency at 8 B–32 B under O2; large blocks become memory-bound, saturating DDR4 bandwidth.
 
-Full analysis: [benchmarks/benchmark.md](benchmarks/benchmark.md)
+Full analysis: [benchmarks/README.md](benchmarks/README.md)
 
 ---
 
@@ -60,7 +60,7 @@ Full analysis: [benchmarks/benchmark.md](benchmarks/benchmark.md)
 ### 1. Clone & Build
 
 ```bash
-git clone https://github.com/YourRepo/RingMaster.git
+git clone https://github.com/Vaibhav-20022002/RingMaster.git
 cd RingMaster
 mkdir build && cd build
 cmake ..                  # automatic cache line detection
@@ -134,8 +134,7 @@ int main() {
 ```
 .
 ├── benchmarks/
-│   ├── benchmark.md   # Detailed results & plots
-│   └── README.md      # Bench summary overview
+│   └── README.md      # Detailed results & plots
 ├── build/             # CMake out-of-source build
 ├── tools/
 │   └── cacheLineSize.cc  # Utility for cache detection
