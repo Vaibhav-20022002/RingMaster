@@ -27,8 +27,6 @@ try_run(
   RUN_OUTPUT_VARIABLE DETECTED_CACHE_LINE_SIZE
 )
 
-message(STATUS "value of current source directory: ${CMAKE_SOURCE_DIR}.")
-
 # * Step:2 - Process the result :
 if(COMPILE_RESULT AND "${RUN_RESULT_CODE}" STREQUAL "0")
   # The output might have leading/trailing whitespace, so we clean it up.
