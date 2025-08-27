@@ -1,7 +1,9 @@
 #pragma once
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
-#include <memory>
+#include <mutex>
+#include <thread>
 #include <utility>
 
 /**
@@ -78,6 +80,26 @@ private:
   PaddedAtomic tail_{0}; /**< Consumer index (next read position) */
   alignas(
       CACHE_LINE_SIZE) Q_TYPE buffer_[Capacity]; /**< Storage for elements, cache-line aligned */
+
+  /**
+   * @brief Adaptive blocking primitives (spin-then-block)
+   *
+   * These members provide a low-overhead mechanism to block the producer
+   * or consumer when waits become long. The strategy is:
+   *  1. Busy-spin for a short number of iterations to cover common short
+   *     wait periods (keeps latency low for brief stalls).
+   *  2. If spinning exceeds a threshold, enter a condition_variable wait to
+   *     yield the CPU until the opposite side signals progress.
+   *
+   * The implementation is careful to preserve the single-producer /
+   * single-consumer assumptions of the ring: only at most one thread will
+   * ever wait on the producer-side path and at most one on the consumer
+   * side. Using a mutex + condvar here simplifies correctness and avoids
+   * more complex lock-free blocking constructs.
+   */
+  mutable std::mutex      cv_mutex_;     /**< Mutex for condition variables */
+  std::condition_variable not_empty_cv_; /**< Notifies consumer when items arrive */
+  std::condition_variable not_full_cv_;  /**< Notifies producer when space freed */
 
 public:
   /**
@@ -218,5 +240,105 @@ public:
     const size_t head = head_.var.load(std::memory_order_acquire);
     const size_t tail = tail_.var.load(std::memory_order_acquire);
     return head - tail;
+  }
+
+  /**
+   * @brief Push with adaptive spin-then-block waiting
+   *
+   * This call will attempt to push the supplied value into the ring. It
+   * first busy-spins for up to `spin_limit` failed attempts to keep
+   * latency low for short waits. If the ring remains full it will then
+   * block on a condition variable until space becomes available.
+   *
+   * @tparam ENQ_TYPE Deduced type for the value to insert
+   * @param value Value to insert (forwarded)
+   * @param spin_limit Number of spin attempts before blocking (default 1024)
+   * @param spin_counter Optional pointer to atomic counter to accumulate spin attempts
+   * @param block_counter Optional pointer to atomic counter incremented on each block
+   */
+  template<typename ENQ_TYPE>
+  void push_wait(ENQ_TYPE &&value,
+      size_t                spin_limit    = 1024,
+      std::atomic<size_t>  *spin_counter  = nullptr,
+      std::atomic<size_t>  *block_counter = nullptr) noexcept {
+    // Local accumulator for spins to avoid frequent atomic updates.
+    size_t local_spins = 0;
+
+    // Try until push succeeds. The fastpath uses the existing non-blocking
+    // push() which is optimized for the SPSC case.
+    while (true) {
+      if (push(std::forward<ENQ_TYPE>(value))) {
+        // Successful push: update statistics and notify the consumer.
+        if (spin_counter && local_spins) {
+          spin_counter->fetch_add(local_spins, std::memory_order_relaxed);
+        }
+        // Notify without holding the mutex to avoid unnecessary contention.
+        not_empty_cv_.notify_one();
+        return;
+      }
+
+      ++local_spins;
+      // Short exponential backoff is not necessary here; yield occasionally
+      // to reduce busyness while still remaining responsive.
+      if (local_spins < spin_limit) {
+        if ((local_spins & 0x3FF) == 0) std::this_thread::yield();
+        continue;
+      }
+
+      // Spinning exceeded threshold: enter blocking wait. We increment the
+      // block counter once per blocking entry to let benchmarks observe
+      // how often threads actually block.
+      if (block_counter) block_counter->fetch_add(1, std::memory_order_relaxed);
+
+      std::unique_lock<std::mutex> lock(cv_mutex_);
+      // Wait until not full. The predicate checks the ring state so spurious
+      // wakeups are harmless.
+      not_full_cv_.wait(lock, [this]() { return !isFull(); });
+
+      // After wakeup, loop and attempt push again. Reset local spin counter
+      // to account for spins after wakeup.
+      local_spins = 0;
+    }
+  }
+
+  /**
+   * @brief Pop with adaptive spin-then-block waiting
+   *
+   * Symmetric to push_wait(): busy-spins for `spin_limit` failed attempts
+   * to pop, then blocks on a condition variable if the ring remains empty.
+   *
+   * @param out Reference that receives the popped element
+   * @param spin_limit Number of spin attempts before blocking (default 1024)
+   * @param spin_counter Optional pointer to atomic counter to accumulate spin attempts
+   * @param block_counter Optional pointer to atomic counter incremented on each block
+   * @return true on successful pop (always returns true eventually)
+   */
+  bool pop_wait(Q_TYPE    &out,
+      size_t               spin_limit    = 1024,
+      std::atomic<size_t> *spin_counter  = nullptr,
+      std::atomic<size_t> *block_counter = nullptr) noexcept {
+    size_t local_spins = 0;
+
+    while (true) {
+      if (pop(out)) {
+        if (spin_counter && local_spins) {
+          spin_counter->fetch_add(local_spins, std::memory_order_relaxed);
+        }
+        // Wake producer that space is available.
+        not_full_cv_.notify_one();
+        return true;
+      }
+
+      ++local_spins;
+      if (local_spins < spin_limit) {
+        if ((local_spins & 0x3FF) == 0) std::this_thread::yield();
+        continue;
+      }
+
+      if (block_counter) block_counter->fetch_add(1, std::memory_order_relaxed);
+      std::unique_lock<std::mutex> lock(cv_mutex_);
+      not_empty_cv_.wait(lock, [this]() { return !isEmpty(); });
+      local_spins = 0;
+    }
   }
 };
